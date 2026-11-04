@@ -1,38 +1,65 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt">
 <head>
     <meta charset="UTF-8">
-    <title>Wallet Live - Ativos</title>
+    <title>Wallet Live - Dashboard</title>
     <style>
-        body { font-family: monospace; background: #121212; color: #00ff66; padding: 2rem; }
-        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-        th, td { border: 1px solid #333; padding: 0.75rem; text-align: left; }
-        th { background: #1e1e1e; }
+        body { background-color: #0d1117; color: #c9d1d9; font-family: monospace; padding: 20px; }
+        h1 { color: #58a6ff; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #30363d; padding: 10px; text-align: left; }
+        th { background-color: #161b22; color: #58a6ff; }
+        form { background: #161b22; padding: 15px; border: 1px solid #30363d; margin-bottom: 20px; border-radius: 6px; }
+        input { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 8px; margin-right: 10px; }
+        button { background: #238636; color: white; border: none; padding: 8px 15px; cursor: pointer; border-radius: 4px; }
+        button:hover { background: #2ea043; }
+        .btn-delete { background: #da3633; }
+        .btn-delete:hover { background: #f85149; }
+        .summary { font-size: 1.2em; margin-top: 15px; color: #3fb950; }
     </style>
 </head>
 <body>
     <h1>wallet_live // dashboard</h1>
-    <p>Lista de ativos cadastrados no sistema:</p>
-    
+
+    <form action="/assets/create" method="POST">
+        <h3>Adicionar Novo Ativo</h3>
+        <input type="text" name="name" placeholder="Nome (ex: Bitcoin)" required>
+        <input type="text" name="symbol" placeholder="Símbolo (ex: BTC)" required>
+        <input type="number" step="any" name="quantity" placeholder="Quantidade" required>
+        <input type="number" step="any" name="price_usd" placeholder="Preço USD" required>
+        <button type="submit">Cadastrar Ativo</button>
+    </form>
+
+    <h3>Lista de Ativos Cadastrados</h3>
     <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Nome</th>
-                <th>Símbolo</th>
-                <th>Preço (USD)</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for asset in assets %}
-            <tr>
-                <td>{{ asset.id }}</td>
-                <td>{{ asset.name }}</td>
-                <td>{{ asset.symbol }}</td>
-                <td>${{ asset.price_usd }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
+        <tr>
+            <th>ID</th>
+            <th>Nome</th>
+            <th>Símbolo</th>
+            <th>Quantidade</th>
+            <th>Preço (USD)</th>
+            <th>Total (USD)</th>
+            <th>Ações</th>
+        </tr>
+        {% for asset in assets %}
+        <tr>
+            <td>{{ asset.id }}</td>
+            <td>{{ asset.name }}</td>
+            <td>{{ asset.symbol }}</td>
+            <td>{{ asset.quantity }}</td>
+            <td>$ {{ asset.price_usd }}</td>
+            <td>$ {{ asset.quantity * asset.price_usd }}</td>
+            <td>
+                <form action="/assets/delete/{{ asset.id }}" method="POST" style="margin:0; background:none; border:none; padding:0;">
+                    <button type="submit" class="btn-delete">Apagar</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
     </table>
+
+    <div class="summary">
+        Património Total da Carteira: <strong>$ {{ total_portfolio }}</strong>
+    </div>
 </body>
 </html>

@@ -3,9 +3,9 @@ use axum::{
     Router,
     Json,
     http::{StatusCode, header},
-    response::{Html, IntoResponse, Response},
+    response::{Html, IntoResponse},
     Form,
-    extract::FromRequestParts,
+    extract::{Path, FromRequestParts},
 };
 use axum::http::request::Parts;
 use serde::{Deserialize, Serialize};
@@ -21,6 +21,7 @@ struct Asset {
     id: i64,
     name: String,
     symbol: String,
+    quantity: f64,
     price_usd: f64,
 }
 
@@ -37,13 +38,20 @@ struct AuthPayload {
     password: String,
 }
 
+#[derive(Deserialize)]
+struct AssetForm {
+    name: String,
+    symbol: String,
+    quantity: f64,
+    price_usd: f64,
+}
+
 #[derive(Serialize, Deserialize)]
 struct Claims {
     sub: String,
     exp: usize,
 }
 
-// Extrator personalizado do Axum para validar o JWT nos headers da requisição
 struct AuthenticatedUser(Claims);
 
 #[axum::async_trait]
@@ -53,8 +61,7 @@ where
 {
     type Rejection = StatusCode;
 
-    async fn from_request_parts(parts: &Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        // Pega o header Authorization: Bearer <token>
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         let auth_header = parts
             .headers
             .get(header::AUTHORIZATION)
@@ -68,7 +75,6 @@ where
         let token = &auth_header[7..];
         let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret_default".to_string());
 
-        // Decodifica e valida o token
         let token_data = decode::<Claims>(
             token,
             &DecodingKey::from_secret(jwt_secret.as_bytes()),
@@ -83,6 +89,7 @@ where
 #[template(path = "index.html")]
 struct IndexTemplate {
     assets: Vec<Asset>,
+    total_portfolio: f64,
 }
 
 #[derive(Template)]
@@ -120,34 +127,42 @@ async fn main() {
         .route("/", get(index_page))
         .route("/login", get(login_page).post(login_handler))
         .route("/register", get(register_page).post(register_handler))
-        .route("/api/assets", get(list_assets).post(create_asset)) // Rota protegida por middleware abaixo
+        .route("/assets/create", post(create_asset_web))
+        .route("/assets/delete/:id", post(delete_asset_web))
+        .route("/api/assets", get(list_assets).post(create_asset_api))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
-    println!("Servidor rodando em http://127.0.0.1:3000 com Autenticação e Cadastro!");
+    println!("Servidor rodando em http://127.0.0.1:3000 com sucesso!");
     
     axum::serve(listener, app).await.unwrap();
 }
 
 async fn login_page() -> impl IntoResponse {
-    LoginTemplate {}.render().map(Html).unwrap_or_else(|_| "Erro".to_string())
+    let template = LoginTemplate {};
+    match template.render() {
+        Ok(html) => Html(html).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 async fn register_page() -> impl IntoResponse {
-    RegisterTemplate {}.render().map(Html).unwrap_or_else(|_| "Erro".to_string())
+    let template = RegisterTemplate {};
+    match template.render() {
+        Ok(html) => Html(html).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 async fn register_handler(
     axum::extract::State(state): axum::extract::State<SharedState>,
     Form(payload): Form<AuthPayload>,
 ) -> impl IntoResponse {
-    // Criptografa a senha com bcrypt
     let password_hash = match hash(payload.password, DEFAULT_COST) {
         Ok(h) => h,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
 
-    // Insere o usuário no banco
     let result = sqlx::query("INSERT INTO users (email, password_hash) VALUES (?, ?)")
         .bind(&payload.email)
         .bind(password_hash)
@@ -155,7 +170,7 @@ async fn register_handler(
         .await;
 
     match result {
-        Ok(_) => Html("Usuário cadastrado com sucesso! <a href='/login'>Faça login</a>").into_response(),
+        Ok(_) => Html("Utilizador registado com sucesso! <a href='/login'>Faça login</a>").into_response(),
         Err(_) => StatusCode::BAD_REQUEST.into_response(),
     }
 }
@@ -196,20 +211,54 @@ async fn login_handler(
 async fn index_page(
     axum::extract::State(state): axum::extract::State<SharedState>,
 ) -> impl IntoResponse {
-    let assets = sqlx::query_as::<_, Asset>("SELECT id, name, symbol, price_usd FROM assets")
+    let assets = sqlx::query_as::<_, Asset>("SELECT id, name, symbol, quantity, price_usd FROM assets")
         .fetch_all(&state.db)
         .await
         .unwrap_or_default();
 
-    IndexTemplate { assets }.render().map(Html).unwrap_or_else(|_| "Erro".to_string()).into_response()
+    let total_portfolio: f64 = assets.iter().map(|a| a.quantity * a.price_usd).sum();
+
+    let template = IndexTemplate { assets, total_portfolio };
+    match template.render() {
+        Ok(html) => Html(html).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
-// Rota protegida: Exige o cabeçalho Authorization: Bearer <seu_token>
+async fn create_asset_web(
+    axum::extract::State(state): axum::extract::State<SharedState>,
+    Form(payload): Form<AssetForm>,
+) -> impl IntoResponse {
+    let _ = sqlx::query(
+        "INSERT INTO assets (name, symbol, quantity, price_usd) VALUES (?, ?, ?, ?)"
+    )
+    .bind(payload.name)
+    .bind(payload.symbol)
+    .bind(payload.quantity)
+    .bind(payload.price_usd)
+    .execute(&state.db)
+    .await;
+
+    axum::response::Redirect::to("/").into_response()
+}
+
+async fn delete_asset_web(
+    axum::extract::State(state): axum::extract::State<SharedState>,
+    Path(id): Path<i64>,
+) -> impl IntoResponse {
+    let _ = sqlx::query("DELETE FROM assets WHERE id = ?")
+        .bind(id)
+        .execute(&state.db)
+        .await;
+
+    axum::response::Redirect::to("/").into_response()
+}
+
 async fn list_assets(
     _auth: AuthenticatedUser,
     axum::extract::State(state): axum::extract::State<SharedState>,
 ) -> Result<Json<Vec<Asset>>, StatusCode> {
-    let assets = sqlx::query_as::<_, Asset>("SELECT id, name, symbol, price_usd FROM assets")
+    let assets = sqlx::query_as::<_, Asset>("SELECT id, name, symbol, quantity, price_usd FROM assets")
         .fetch_all(&state.db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -217,16 +266,17 @@ async fn list_assets(
     Ok(Json(assets))
 }
 
-async fn create_asset(
+async fn create_asset_api(
     _auth: AuthenticatedUser,
     axum::extract::State(state): axum::extract::State<SharedState>,
-    Json(payload): Json<Asset>,
+    Json(payload): Json<AssetForm>,
 ) -> StatusCode {
     let result = sqlx::query(
-        "INSERT INTO assets (name, symbol, price_usd) VALUES (?, ?, ?)"
+        "INSERT INTO assets (name, symbol, quantity, price_usd) VALUES (?, ?, ?, ?)"
     )
     .bind(payload.name)
     .bind(payload.symbol)
+    .bind(payload.quantity)
     .bind(payload.price_usd)
     .execute(&state.db)
     .await;
