@@ -24,6 +24,6 @@ wallet/
 ├── templates/          # Ficheiros HTML para renderização via Askama (index.html, login.html, register.html)
 ├── src/
 │   └── main.rs         # Lógica principal da aplicação, rotas, extratores e modelos
-├── .env.example        # Exemplo de variáveis de ambiente
+├── .env                # Exemplo de variáveis de ambiente
 ├── Cargo.toml          # Dependências e configurações do Cargo
 └── README.md           # Documentação do projeto
