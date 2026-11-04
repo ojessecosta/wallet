@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Wallet Live - Ativos</title>
+    <style>
+        body { font-family: monospace; background: #121212; color: #00ff66; padding: 2rem; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { border: 1px solid #333; padding: 0.75rem; text-align: left; }
+        th { background: #1e1e1e; }
+    </style>
+</head>
+<body>
+    <h1>wallet_live // dashboard</h1>
+    <p>Lista de ativos cadastrados no sistema:</p>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Nome</th>
+                <th>Símbolo</th>
+                <th>Preço (USD)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for asset in assets %}
+            <tr>
+                <td>{{ asset.id }}</td>
+                <td>{{ asset.name }}</td>
+                <td>{{ asset.symbol }}</td>
+                <td>${{ asset.price_usd }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
